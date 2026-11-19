@@ -690,7 +690,7 @@ def _enriched_build():
                 price, bk = sides["over"]; best = sides.get("over_best"); alt = None
                 if best and best[1] != bk and best[0] >= price * 1.03: alt = [best[0], best[1]]
                 bl[line] = dict(line=line, price=price, book=bk, p_over=po, edge=po - 1 / price, hit=sum(1 for r in l10 if val(r) > line), n=n,
-                                under=(sides.get("under") or [None])[0], alt=alt)
+                                under=(sides.get("under") or [None])[0], under_book=(sides.get("under") or [None, None])[1], alt=alt)
             if bl: p["book"][s] = list(bl.values())
             lines = {}
             if combo:
@@ -893,10 +893,12 @@ def et_day(start_iso):
 def _current_model_id():
     return _safe(lambda: predict.load_models(strict=False).get("model_id"))
 
-def log_picks(best=None, value=None):
+def log_picks(best=None, value=None, sweet=None):
     """Lock today's published picks into the track record the first time they are generated (never edited afterwards, only graded)."""
     now = dt.datetime.now(dt.timezone.utc); now_s = now.strftime("%Y-%m-%dT%H:%MZ")
     best = best or compute_best(); value = value or compute_value(); mid = _current_model_id()
+    try: sweet = sweet or compute_sweet()
+    except Exception: logging.exception("sweet spot failed"); sweet = dict(picks=[])
     with closing(con()) as c:
         in_combo = {(x["game_id"], x["player_id"], x["stat"]) for x in best["combo"]["legs"]}
         for l in best["legs"]:
@@ -914,6 +916,10 @@ def log_picks(best=None, value=None):
             c.execute("INSERT OR IGNORE INTO pick_log(day,game_id,player_id,player,team,kind,stat,line,side,model_p,hit,n,price,book,in_combo,created,model_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                       (et_day(o["start"]), o["game_id"], o.get("player_id", ""), o.get("player") or o.get("text"), o.get("team", ""), "value", o["stat"], o["line"], o["side"], o["p"],
                        o.get("hit"), o.get("n"), o["price"], o.get("book"), 0, now.isoformat(), mid))
+        for o in sweet.get("picks") or []:
+            if o["start"] <= now_s: continue
+            c.execute("INSERT OR IGNORE INTO pick_log(day,game_id,player_id,player,team,kind,stat,line,side,model_p,hit,n,price,book,in_combo,created,model_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                      (et_day(o["start"]), o["game_id"], o["player_id"], o["player"], o["team"], "sweet", o["stat"], o["line"], o["side"], o["p"], o.get("hit"), o.get("n"), o["price"], o.get("book"), 0, now.isoformat(), mid))
         c.commit()
 
 def record_closing_prices(c):
@@ -1019,9 +1025,9 @@ def track_record(x_code: str = Header("")):
         g = [r for r in rows if r["result"] in ("won", "lost")]
         return dict(n=len(g), won=sum(1 for r in g if r["result"] == "won"), avg_p=(sum(r["model_p"] for r in g) / len(g)) if g else None,
                     pending=sum(1 for r in rows if r["result"] is None), void=sum(1 for r in rows if r["result"] == "void"))
-    L = [r for r in legs if r["kind"] == "leg"]; V = [r for r in legs if r["kind"] == "value"]; K = [r for r in legs if r["kind"] == "call"]
+    L = [r for r in legs if r["kind"] == "leg"]; V = [r for r in legs if r["kind"] == "value"]; K = [r for r in legs if r["kind"] == "call"]; W = [r for r in legs if r["kind"] == "sweet"]
     out = dict(legs=summ(L), value=summ(V), calls=summ(K), bankroll=bankroll(legs),
-               by_kind=dict(legs=dict(summ(L), bank=bankroll(L)), calls=dict(summ(K), bank=bankroll(K)), value=dict(summ(V), bank=bankroll(V))))   # each kind on its own, so one kind can't hide another
+               by_kind=dict(legs=dict(summ(L), bank=bankroll(L)), calls=dict(summ(K), bank=bankroll(K)), value=dict(summ(V), bank=bankroll(V)), sweet=dict(summ(W), bank=bankroll(W))))   # each kind on its own, so one kind can't hide another
     bins = []
     for lo, hi in ((0.0, 0.7), (0.7, 0.8), (0.8, 1.01)):
         g = [r for r in L if r["result"] in ("won", "lost") and lo <= r["model_p"] < hi]
@@ -1038,10 +1044,10 @@ def track_record(x_code: str = Header("")):
     gc = [x for x in combos if x["result"] in ("won", "lost")]
     out["combos"] = dict(n=len(gc), won=sum(1 for x in gc if x["result"] == "won"), avg_p=(sum(x["joint"] for x in gc) / len(gc)) if gc else None, pending=sum(1 for x in combos if x["result"] is None))
     days = {}
-    for x in combos: days.setdefault(x["day"], dict(day=x["day"], combo=dict(result=x["result"], joint=x["joint"], fair_odds=x["fair_odds"], legs=json.loads(x["legs"])), legs=[], value=[], calls=[]))
+    for x in combos: days.setdefault(x["day"], dict(day=x["day"], combo=dict(result=x["result"], joint=x["joint"], fair_odds=x["fair_odds"], legs=json.loads(x["legs"])), legs=[], value=[], calls=[], sweet=[]))
     for r in legs:
-        d = days.setdefault(r["day"], dict(day=r["day"], combo=None, legs=[], value=[], calls=[]))
-        (d["legs"] if r["kind"] == "leg" else d["calls"] if r["kind"] == "call" else d["value"]).append(dict(player=r["player"], player_id=r["player_id"], game_id=r["game_id"], team=r["team"], stat=r["stat"], line=r["line"], side=r["side"], p=r["model_p"], price=r["price"],
+        d = days.setdefault(r["day"], dict(day=r["day"], combo=None, legs=[], value=[], calls=[], sweet=[]))
+        (d["legs"] if r["kind"] == "leg" else d["calls"] if r["kind"] == "call" else d["sweet"] if r["kind"] == "sweet" else d["value"]).append(dict(player=r["player"], player_id=r["player_id"], game_id=r["game_id"], team=r["team"], stat=r["stat"], line=r["line"], side=r["side"], p=r["model_p"], price=r["price"],
                                                                       result=r["result"], actual=r["actual"], in_combo=bool(r["in_combo"])))
     starts = {}
     with closing(con()) as c:
@@ -1059,7 +1065,7 @@ def track_record(x_code: str = Header("")):
         d["start"] = min(known) if known else None       # the page shows this day by the viewer's own clock
     recent = sorted(days.values(), key=lambda d: d["day"], reverse=True)[:21]
     cutoff = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(hours=36)).strftime("%Y-%m-%dT%H:%MZ")
-    waiting = [d for d in recent if any(x["result"] is None for x in d["legs"] + d["value"] + d.get("calls", [])) and not (d["start"] and d["start"] < cutoff)]
+    waiting = [d for d in recent if any(x["result"] is None for x in d["legs"] + d["value"] + d.get("calls", []) + d.get("sweet", [])) and not (d["start"] and d["start"] < cutoff)]
     out["days"] = sorted(waiting, key=lambda d: d["start"] or d["day"]) + [d for d in recent if d not in waiting]    # days with picks still waiting first (soonest at the top, including games in play), then finished days newest first
     return out
 
@@ -1191,12 +1197,40 @@ def compute_value():
     ranked.sort(key=lambda o: -o["adj_edge"])
     return dict(picks=ranked[:10], odds_connected=bool(_o.available()))
 
+SWEET_LO, SWEET_HI = 1.70, 2.20   # Sweet spot: Pts + Reb + Ast lines priced about even money
+SWEET_GAP = 0.06                  # the app's chance, leaned halfway to the bookmaker's (VALUE_LEAN), must still beat the price by 6 points
+SWEET_MAX = 5                     # at most 5 a night, one per player (replay of 982 past games, 2025-26: about +5c per $1 bet at the best price)
+
+def compute_sweet():
+    preds = next_game_day([p for p in enriched() if not p.get("frozen") and not has_started(p["start"])]); out = {}
+    _, why = model_status(preds)
+    if why: return dict(picks=[], notice=why)
+    for p in preds:
+        if (p.get("injury") or {}).get("status") in ("Out", "Doubtful"): continue
+        if is_stale(p.get("odds_age_h")): continue
+        for l in (p.get("book") or {}).get("pra", []):
+            over = l.get("alt") or [l.get("price"), l.get("book")]
+            for side, price, bk, chance in (("over", over[0], over[1], l["p_over"]), ("under", l.get("under"), l.get("under_book"), 1 - l["p_over"])):
+                if not price or not (SWEET_LO <= price <= SWEET_HI): continue
+                gap = value_gap(chance, price)
+                if gap < SWEET_GAP: continue
+                o = dict(kind="player", start=p["start"], game_id=p["game_id"], player_id=p["player_id"], player=p["player"], team=p["team"], stat="pra", line=l["line"], side=side,
+                         price=price, book=bk, p=chance, gap=gap, hit=(l["hit"] if side == "over" else l["n"] - l["hit"]), n=l["n"], why=plain_why(p, "pra", l["line"]))
+                if p["player_id"] not in out or gap > out[p["player_id"]]["gap"]: out[p["player_id"]] = o
+    return dict(picks=sorted(out.values(), key=lambda o: -o["gap"])[:SWEET_MAX])
+
+@app.get("/api/sweet")
+def sweet(x_code: str = Header("")):
+    """Sweet spot: up to 5 Pts + Reb + Ast picks at about even money that still beat the price after leaning halfway to the bookmaker."""
+    check(x_code)
+    return _not_started_value(cached_calc("sweet", compute_sweet))
+
 @app.get("/api/best")
 def best(x_code: str = Header("")):
     """Safest legs of the day plus a suggested 2-3 leg combo aiming for fair odds of ~2.0+ while staying likely. Also locks them into the track record."""
     check(x_code)
     res = _not_started_best(cached_calc("best", compute_best))
-    try: log_picks(best=res, value=_not_started_value(cached_calc("value", compute_value)))
+    try: log_picks(best=res, value=_not_started_value(cached_calc("value", compute_value)), sweet=_not_started_value(cached_calc("sweet", compute_sweet)))
     except Exception: logging.exception("pick logging failed")
     return dict(res, locked=_safe(locked_picks, None))
 
@@ -1395,17 +1429,17 @@ def locked_picks(now=None):
         try: t = dt.datetime.fromisoformat(st.replace("Z", "+00:00"))
         except Exception: return False
         return t <= now and now - t <= dt.timedelta(hours=LOCK_KEEP_H)
-    out = dict(legs=[], calls=[], value=[], combo=None)
+    out = dict(legs=[], calls=[], value=[], sweet=[], combo=None)
     with closing(con()) as c:
         starts = {}
         def start_of(gid):
             if gid not in starts: starts[gid] = _game_start(c, gid)
             return starts[gid]
-        for r in c.execute("SELECT * FROM pick_log WHERE kind IN ('leg','call','value') AND day >= ? ORDER BY id", (since,)).fetchall():
+        for r in c.execute("SELECT * FROM pick_log WHERE kind IN ('leg','call','value','sweet') AND day >= ? ORDER BY id", (since,)).fetchall():
             if r["kind"] == "leg" and r["price"] is None: continue          # only picks that were shown (they need a bookmaker line)
             st = start_of(r["game_id"])
             if not st or not recent(st): continue
-            out[{"leg": "legs", "call": "calls", "value": "value"}[r["kind"]]].append(dict(
+            out[{"leg": "legs", "call": "calls", "value": "value", "sweet": "sweet"}[r["kind"]]].append(dict(
                 player=r["player"], player_id=r["player_id"], team=r["team"], game_id=r["game_id"], stat=r["stat"], line=r["line"], side=r["side"] or "over",
                 p=r["model_p"], price=r["price"], book=r["book"], in_combo=bool(r["in_combo"]), result=r["result"], start=st))
         for r in c.execute("SELECT * FROM combo_log WHERE day >= ? ORDER BY day DESC", (since,)).fetchall():
