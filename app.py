@@ -2026,7 +2026,7 @@ def _safe(fn, default=None):
 
 # Past bookmaker prices for the owner-approved study (bought with the odds credits; no friends' data). Read-only, behind a private key:
 # only the SHA-256 of the key is stored here, so the key itself is never in the code.
-EXPORT_KEY_SHA256 = "9c767a0c230700b61bc213733f36b46045f110d88268a99652d598c3fb87d536"
+EXPORT_KEY_SHA256 = "344c5625c14120c185e07013dd527d4f9721d37e51b532f93eaeb5ac6b47b34a"
 
 @app.get("/api/export/hist_odds")
 def export_hist_odds(key: str = ""):
