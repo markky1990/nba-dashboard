@@ -7,6 +7,7 @@ H = {"User-Agent": "Mozilla/5.0"}
 SB = "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard"
 SUM = "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/summary"
 _cache = {}
+LIVE_TTL = 5          # seconds: scores and box scores being watched are fetched from ESPN again once their copy is this old (ESPN itself caches for up to ~10 s)
 
 def _get(url, **params):
     """ESPN occasionally returns an empty body; retry a few times before giving up."""
@@ -88,7 +89,7 @@ def _scoreboard():
 
 def scoreboard():
     """Live now, then not-yet-started, then finished (finished games older than ~44h are dropped, so yesterday on any phone clock is still there)."""
-    games = cached("sb", 10, _scoreboard)
+    games = cached("sb", LIVE_TTL, _scoreboard)
     cutoff = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(hours=44)).strftime("%Y-%m-%dT%H:%MZ")
     games = [g for g in games if g["state"] != "post" or g["start"] >= cutoff]
     order = {"in": 0, "pre": 1, "post": 2}
@@ -130,4 +131,4 @@ def _box(game_id):
     return dict(game_id=game_id, teams=teams)
 
 def boxscore(game_id):
-    return cached("box" + game_id, 10, lambda: _box(game_id))
+    return cached("box" + game_id, LIVE_TTL, lambda: _box(game_id))
