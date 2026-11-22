@@ -48,12 +48,19 @@ def _keeper():
 def start_keeper():
     threading.Thread(target=_keeper, daemon=True).start()
 
+STALE_MAX = 45       # seconds: a copy older than this (nobody was watching, so it was not kept fresh) is never shown; it is fetched again first
+
 def cached(key, ttl, fn):
-    """Fresh copy: return it. Old copy: return it at once and refresh it in the background (one refresh at a time), so a page never waits
-    for ESPN. No copy yet: fetch it now (only the very first time)."""
+    """Fresh copy: return it. A little old (under STALE_MAX): return it at once and refresh it in the background (one refresh at a time).
+    Very old, or no copy yet: fetch it now, so a game that finished while nobody was looking never shows its old in-game numbers;
+    if ESPN fails then, the last copy is still better than nothing."""
     _wanted[key] = (time.time(), ttl, fn)
     hit = _cache.get(key)
     if hit and time.time() - hit[0] < ttl: return hit[1]
+    if hit and time.time() - hit[0] >= STALE_MAX:
+        try: val = fn()
+        except Exception: return hit[1]
+        _cache[key] = (time.time(), val); return val
     if hit:
         with _busy_lock:
             if key in _busy: return hit[1]
