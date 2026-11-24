@@ -1175,9 +1175,12 @@ def compute_value():
     # team markets from bookmaker prices
     gp = game_preds(); import odds as _o
     with closing(con()) as c: bl = _o.load_lines(c); lage = _o.line_ages(c)
+    upcoming = [dict(g, game_id=gid) for gid, g in gp.items() if not has_started(g["start"])]
+    day = et_day(min(p["start"] for p in preds)) if preds else (et_day(min(g["start"] for g in upcoming)) if upcoming else None)
     for gid, g in gp.items():
         b = bl.get(gid) or {}
         if has_started(g["start"]): continue              # no recommendation for a game that has begun
+        if et_day(g["start"]) != day: continue            # same game day as the player picks: no team bets for games on later days
         if is_stale(lage.get(gid)): continue          # old team prices are not value
         if g.get("source") != "market": continue   # without a market line our own team model has no proven edge, so no team value claims
         for side, pk, nmx in (("home", "p_home", g["home"]), ("away", "p_away", g["away"])):

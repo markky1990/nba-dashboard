@@ -57,3 +57,11 @@ def test_one_started_leg_blocks_the_whole_slip(setup):
 @pytest.mark.parametrize("leg", [dict(game_id="new", player_id="pnew", stat="reb", line=3.5, side="over"), dict(game_id="new", stat="ml", side="home")])
 def test_games_not_started_still_work(setup, leg):
     assert setup.post("/api/parlay", json=dict(legs=[leg])).status_code == 200
+
+def test_team_value_only_for_the_same_game_day(setup, monkeypatch):
+    later = iso(NOW + dt.timedelta(days=2))
+    monkeypatch.setattr(app, "game_preds", lambda: {"new": gp(FUTURE), "later": gp(later)})
+    monkeypatch.setattr(odds, "load_lines", lambda c: {g: {"h2h": {"home": (2.0, "sportsbet")}} for g in ("new", "later")})
+    monkeypatch.setattr(odds, "line_ages", lambda c: {"new": 1.0, "later": 1.0})
+    teams = [p for p in app.compute_value()["picks"] if p["kind"] == "team"]
+    assert teams and all(p["game_id"] == "new" for p in teams)
