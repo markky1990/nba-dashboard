@@ -1661,7 +1661,7 @@ def player(pid: str, x_code: str = Header("")):
     d["dd"] = ((d.pts >= 10).astype(int) + (d.reb >= 10) + (d.ast >= 10) >= 2).astype(int)
     d["td"] = ((d.pts >= 10).astype(int) + (d.reb >= 10) + (d.ast >= 10) >= 3).astype(int)
     cur = d[d.season == d.season.iloc[0]]
-    tonight = next((p for p in enriched() if p["player_id"] == pid), None)
+    tonight = min((p for p in enriched() if p["player_id"] == pid and not has_started(p["start"])), key=lambda p: p["start"], default=None)      # his NEXT game, not any listed game
     return dict(player=d.player.iloc[0], team=((rm[pid] or "") if pid in rm else d.team.iloc[0]), games=d.head(20)[["date", "opp", "home", "min", "pts", "reb", "ast", "dd", "td"]].to_dict("records"),
                 season=dict(games=len(cur), dd=int(cur.dd.sum()), td=int(cur.td.sum()), pts=float(cur.pts.mean()), reb=float(cur.reb.mean()), ast=float(cur.ast.mean()), min=float(cur["min"].mean())),
                 last20=dict(dd=int(d.head(20).dd.sum()), td=int(d.head(20).td.sum())),
