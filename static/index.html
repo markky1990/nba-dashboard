@@ -922,7 +922,7 @@ const lastGot={};const quietGetNet=async p=>{const t0=performance.now();try{cons
 
 /* ---------- games tab: every game of the day in one place (projections, live score, lineups) ---------- */
 let gamesDay="today";
-const gameDayOf=(start,state)=>{if(state=="in")return"today";const d=dayName(start);return d=="later"?"tomorrow":d};
+const gameDayOf=(start,state)=>{if(state=="in")return"today";const d=dayName(start);if(d!="later")return d;return new Date(start).toDateString()==new Date(Date.now()+864e5).toDateString()?"tomorrow":"later"};      // only tomorrow's own games under Tomorrow (later days are not listed)
 function setGamesDay(d){gamesDay=d;render()}
 function gameRows(){const rows=new Map();
   slate.forEach(g=>rows.set(g.game_id,{id:g.game_id,start:g.start,g,l:null}));
