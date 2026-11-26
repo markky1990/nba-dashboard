@@ -1387,7 +1387,7 @@ def calls(x_code: str = Header("")):
         rec = c.execute("SELECT sum(result='won'), sum(result='lost') FROM pick_log WHERE kind='call'").fetchone()
     return dict(res, record=dict(won=rec[0] or 0, lost=rec[1] or 0))
 
-LOCK_KEEP_H = 18          # a locked pick stays on Best picks for 18 hours after its game tips off (then it is under Yesterday)
+LOCK_KEEP_H = 18          # a locked pick stays on Best picks until every locked pick has its result, and at most 18 hours after its game tips off
 
 def locked_picks(now=None):
     """Today's picks whose game has started: exactly what was saved before tip-off (Best picks, the daily combo, Top player calls,
@@ -1417,6 +1417,9 @@ def locked_picks(now=None):
             first = min(ss)
             if not recent(first) and not any(recent(x) for x in ss): continue
             out["combo"] = dict(legs=[dict(l, side="over", start=st) for l, st in zip(legs, ss)], joint=r["joint"], fair_odds=r["fair_odds"], result=r["result"]); break
+    picks = out["legs"] + out["calls"] + out["value"]
+    if (picks or out["combo"]) and all(x["result"] is not None for x in picks) and (out["combo"] is None or out["combo"]["result"] is not None):
+        return dict(legs=[], calls=[], value=[], combo=None)          # every locked pick has its result: they are all on Results now, so the list clears
     return out
 
 def playing_picks():

@@ -38,3 +38,16 @@ def test_locked_picks_leave_after_18_hours(db):
     assert [x["player_id"] for x in L["legs"]] == ["p3"] and L["combo"] is not None     # the 19-hour-old game has gone; the later one (16 hours) stays
     L = app.locked_picks(NOW + dt.timedelta(hours=21))
     assert L["combo"] is None
+
+def test_list_clears_once_every_locked_pick_has_its_result(db):
+    db.execute("UPDATE pick_log SET result='won' WHERE game_id='live'"); db.commit()
+    L = app.locked_picks(NOW)
+    assert L["legs"] and L["combo"]                                       # the combo is still waiting: everything stays
+    db.execute("UPDATE combo_log SET result='lost'"); db.commit()
+    L = app.locked_picks(NOW)
+    assert not L["legs"] and not L["calls"] and not L["value"] and L["combo"] is None
+
+def test_one_pick_still_waiting_keeps_the_list(db):
+    db.execute("UPDATE pick_log SET result='won' WHERE player_id IN ('p1','p5')"); db.execute("UPDATE combo_log SET result='won'"); db.commit()
+    L = app.locked_picks(NOW)
+    assert [x["player_id"] for x in L["value"]] == ["p6"] and L["legs"]

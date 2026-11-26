@@ -502,7 +502,7 @@ function playingHTML(){const L=LOCK(),n=L.legs.length+L.calls.length+L.value.len
   const grp=(title,xs,kind)=>xs.length?`<div class="lockh">${title}</div>${xs.map(x=>row(x,kind)).join("")}`:"";
   const cb=L.combo?`<div class="lockh">Daily combo${L.combo.joint?` <span class="mute" style="font-weight:400">· ${pc0(L.combo.joint)} together${L.combo.fair_odds?` · worth it at ${L.combo.fair_odds.toFixed(2)} or more`:""}</span>`:""}${L.combo.result?` · ${resIcon(L.combo.result)}`:""}</div>${L.combo.legs.map(l=>{const k=lockKey(l,"combo");return `<div class="lockrow" onclick="togLock('${k}')">${legProg(asLeg(l))}<div class="mute lockmeta">${lockClock(l.game_id).replace(/^ · /,"")}</div>${lockOpen.has(k)?lockGameHTML(l.game_id,l):""}</div>`}).join("")}`:"";
   return `<details class="card lockcard" ${playingOpen?"open":""} ontoggle="playingOpen=this.open"><summary style="color:var(--ink);font-size:17px;font-weight:700;margin:0">🔒 Locked picks <span class="mute" style="font-weight:400;font-size:14px">(${n}${live?` · ${live} game${live>1?"s":""} live`:""})</span></summary>
-   <div class="mute" style="font-size:13px;margin:6px 0 2px">Saved before tip-off, so they can no longer be added. Follow them here; they move to Results the next morning.</div>
+   <div class="mute" style="font-size:13px;margin:6px 0 2px">Saved before tip-off, so they can no longer be added. Follow them here; once every game has finished and all are marked, they clear and stay under Results.</div>
    ${grp("Best picks",L.legs,"leg")}${cb}${grp("Top player calls",L.calls,"call")}${grp("Value bets",L.value,"value")}</details>`}
 // tap a locked pick to see its game: score, time left and the score by quarter (kept open across the 20-second refreshes)
 const lockOpen=new Set();
